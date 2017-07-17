@@ -5,8 +5,10 @@
 - chainer v2.0 (or later)
 - opencv2
 
+## Completed
+- KiTTI data loader for chainer
+
 ## TODO
 - prepare requirements.txt
-- KiTTI data loader for chainer
 - bilinear sampler for chainer
 - Resize nearest GPU function for chainer 
