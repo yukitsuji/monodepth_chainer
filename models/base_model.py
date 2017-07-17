@@ -6,7 +6,7 @@ import chainer.links as L
 import chainer.functions as F
 
 
-class VGGNet(chainer.Chain):
+class MonoDepth(chainer.Chain):
 
     """
     VGGNet
