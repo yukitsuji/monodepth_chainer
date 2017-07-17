@@ -26,19 +26,20 @@ class monodepthUpdater(chainer.training.StandardUpdater):
     def __init__(self, *args, **kwargs):
         self.md = kwargs.pop('models')
         self._iter = 0
-        self.left_pyramid = []
-        self.right_pyramid = []
         super(monodepthUpdater, self).__init__(*args, **kwargs)
 
     def loss_md(self, md, x_out, right_images, y_out, lam1=1, lam2=1, lam3=10):
-        loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
-        loss_adv = lam2 * y_out
-        l_t = self.l.calc(right_images)
-        loss_l = lam3 * (F.mean_absolute_error(l_x, l_t))
-        loss = loss_rec + loss_adv + loss_l
-        chainer.report({'loss': loss, "loss_rec": loss_rec,
-                        'loss_adv': loss_adv, "loss_l": loss_l}, md)
-        return loss
+        # TODO: Build scale_pyramid for left and right images
+
+
+        # loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
+        # loss_adv = lam2 * y_out
+        # l_t = self.l.calc(right_images)
+        # loss_l = lam3 * (F.mean_absolute_error(l_x, l_t))
+        # loss = loss_rec + loss_adv + loss_l
+        # chainer.report({'loss': loss, "loss_rec": loss_rec,
+        #                 'loss_adv': loss_adv, "loss_l": loss_l}, md)
+        return total_loss
 
     def scale_pyramid(self, images, scale=4):
         F.resize_images(images, (h, w))
@@ -48,9 +49,6 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         self._iter += 1
 
         batch = self.get_iterator('train').next()
-
-        # TODO: Build scale_pyramid
-        self.left_pyramid = [left_images]
 
         # CPU to GPU
         batchsize = len(batch)
@@ -65,9 +63,9 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         left_images = Variable(left_images)
         right_images = Variable(right_images)
 
-        x_out = self.md.calc(left_images, right_images)
+        self.md.calc(left_images)
         md_optimizer = self.get_optimizer('md')
-        md_optimizer.update(self.loss_md, self.md, x_out, right_images, y_target)
+        md_optimizer.update(self.loss_md, self.md, left_images, right_images)
 
 
 def train(args):
