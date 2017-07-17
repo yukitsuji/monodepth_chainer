@@ -21,29 +21,36 @@ from models.base_model import MonoDepth
 chainer.cuda.set_max_workspace_size(1024 * 1024 * 1024)
 os.environ["CHAINER_TYPE_CHECK"] = "0"
 
-class monodepthUpdater(chainer.training.StandardUpdater):
 
+class monodepthUpdater(chainer.training.StandardUpdater):
     def __init__(self, *args, **kwargs):
         self.md = kwargs.pop('models')
         self._iter = 0
+        self.left_pyramid = []
+        self.right_pyramid = []
         super(monodepthUpdater, self).__init__(*args, **kwargs)
 
     def loss_md(self, md, x_out, right_images, y_out, lam1=1, lam2=1, lam3=10):
         loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
         loss_adv = lam2 * y_out
-        l_t = self.l.calc((right_images - vgg) / vgg)
-        l_x = self.l.calc((x_out - vgg) / vgg)
+        l_t = self.l.calc(right_images)
         loss_l = lam3 * (F.mean_absolute_error(l_x, l_t))
         loss = loss_rec + loss_adv + loss_l
         chainer.report({'loss': loss, "loss_rec": loss_rec,
                         'loss_adv': loss_adv, "loss_l": loss_l}, md)
         return loss
 
+    def scale_pyramid(self, images, scale=4):
+        F.resize_images(images, (h, w))
+
     def update_core(self):
         xp = self.md.xp
         self._iter += 1
 
         batch = self.get_iterator('train').next()
+
+        # TODO: Build scale_pyramid
+        self.left_pyramid = [left_images]
 
         # CPU to GPU
         batchsize = len(batch)
@@ -58,7 +65,7 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         left_images = Variable(left_images)
         right_images = Variable(right_images)
 
-        x_out = self.md.calc(left_images)
+        x_out = self.md.calc(left_images, right_images)
         md_optimizer = self.get_optimizer('md')
         md_optimizer.update(self.loss_md, self.md, x_out, right_images, y_target)
 
@@ -120,10 +127,16 @@ def test(args):
     if args.resume:
         chainer.serializers.load_npz(args.resume, md)
 
-    i = chainer.iterators.SerialIterator(test, batchsize).next()
-    # x,t = conv(i,batchsize)
-    out = md(x,t)
+    for batch in test_iter:
+        batchsize = len(batch)
+        w_in = batch.shape[-1]
+        h_in = batch.shape[-2]
+        left_images = xp.zeros((batchsize, 3, h_in, w_in)).astype("f")
 
+        for i in range(batchsize):
+            left_images[i, :] = xp.asarray(batch[i][0])
+        left_images = Variable(left_images)
+        disparity = md(left_images)
 
 def main():
     parser = argparse.ArgumentParser(
