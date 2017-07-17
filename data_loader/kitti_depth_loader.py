@@ -47,7 +47,7 @@ class KittiDataset(chainer.dataset.DatasetMixin):
         left_image *= color_image
         right_image *= color_image
 
-        return left_image, right_image
+        return np.clip(left_image, 0.0, 1.0), np.clip(right_image, 0.0, 1.0)
 
     def get_example(self, i, minimize=False, log=False, bin_r=0):
         left_image = None

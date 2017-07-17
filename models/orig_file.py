@@ -6,27 +6,6 @@ import tensorflow.contrib.slim as slim
 
 from bilinear_sampler import *
 
-class MonodepthModel(object):
-    """monodepth model"""
-
-    def __init__(self, params, mode, left, right, reuse_variables=None, model_index=0):
-        self.params = params
-        self.mode = mode
-        self.left = left
-        self.right = right
-        self.model_collection = ['model_' + str(model_index)]
-
-        self.reuse_variables = reuse_variables
-
-        self.build_model()
-        self.build_outputs()
-
-        if self.mode == 'test':
-            return
-
-        self.build_losses()
-        self.build_summaries()
-
     def gradient_x(self, img):
         gx = img[:,:,:-1,:] - img[:,:,1:,:]
         return gx
@@ -78,16 +57,13 @@ class MonodepthModel(object):
         image_gradients_x = [self.gradient_x(img) for img in pyramid]
         image_gradients_y = [self.gradient_y(img) for img in pyramid]
 
+        # Delete Channel
         weights_x = [tf.exp(-tf.reduce_mean(tf.abs(g), 3, keep_dims=True)) for g in image_gradients_x]
         weights_y = [tf.exp(-tf.reduce_mean(tf.abs(g), 3, keep_dims=True)) for g in image_gradients_y]
 
         smoothness_x = [disp_gradients_x[i] * weights_x[i] for i in range(4)]
         smoothness_y = [disp_gradients_y[i] * weights_y[i] for i in range(4)]
         return smoothness_x + smoothness_y
-
-    def get_disp(self, x):
-        disp = 0.3 * self.conv(x, 2, 3, 1, tf.nn.sigmoid)
-        return disp
 
     def build_model(self):
         with slim.arg_scope([slim.conv2d, slim.conv2d_transpose], activation_fn=tf.nn.elu):
@@ -101,14 +77,6 @@ class MonodepthModel(object):
                     self.model_input = tf.concat([self.left, self.right], 3)
                 else:
                     self.model_input = self.left
-
-                #build model
-                if self.params.encoder == 'vgg':
-                    self.build_vgg()
-                elif self.params.encoder == 'resnet50':
-                    self.build_resnet50()
-                else:
-                    return None
 
     def build_outputs(self):
         # STORE DISPARITIES

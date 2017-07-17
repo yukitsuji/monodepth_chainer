@@ -31,6 +31,9 @@ class monodepthUpdater(chainer.training.StandardUpdater):
     def loss_md(self, md, x_out, right_images, y_out, lam1=1, lam2=1, lam3=10):
         # TODO: Build scale_pyramid for left and right images
 
+        # TODO: deiparity smoothness error using gradient [:-1], [1:]
+
+        # TODO:
 
         # loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
         # loss_adv = lam2 * y_out
