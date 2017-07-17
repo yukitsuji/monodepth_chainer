@@ -11,4 +11,3 @@
 ## TODO
 - prepare requirements.txt
 - bilinear sampler for chainer
-- Resize nearest GPU function for chainer 
