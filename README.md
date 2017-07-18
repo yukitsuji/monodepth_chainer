@@ -7,7 +7,9 @@
 
 ## Completed
 - KiTTI data loader for chainer
+- Basic Model
 
 ## TODO
 - prepare requirements.txt
+- Loss Function(In development)
 - bilinear sampler for chainer
