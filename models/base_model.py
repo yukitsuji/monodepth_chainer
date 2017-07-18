@@ -122,15 +122,11 @@ class MonoDepth(chainer.Chain):
         concat1 = F.concat([upconv1, udisp2], axis=3)
         iconv1  = F.relu(self.iconv1(concat1))
         self.disp1 = 0.3 * F.sigmoid(self.disp1_l(iconv1))
-        udisp1 = self.upsample_nn(self.disp1, 2)
-        
+
     def upsample_nn(self, x, ratio):
         h, w = x.shape[2:4]
         return F.resize_images(x, (h * ratio, w * ratio))
 
     def __call__(self, x, t):
         self.calc(x)
-        if self.train:
-            return self.disp1, self.disp2, self.disp3, self.disp4
-        else:
-            return self.disp1
+        return self.disp1

@@ -28,10 +28,76 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         self._iter = 0
         super(monodepthUpdater, self).__init__(*args, **kwargs)
 
-    def loss_md(self, md, x_out, right_images, y_out, lam1=1, lam2=1, lam3=10):
-        # TODO: Build scale_pyramid for left and right images
+    def gradient_x(self, img):
+        return img[:, :, :, :-1] - img[:, :, :, 1:]
 
-        # TODO: deiparity smoothness error using gradient [:-1], [1:]
+    def gradient_y(self, img):
+        return img[:, :, :-1] - img[:, :, 1:]
+
+    def get_disparity_smoothness(self, disp, img):
+        disp_gradients_x = self.gradient_x(disp)
+        disp_gradients_y = self.gradient_y(disp)
+
+        img_gradients_x = self.gradient_x(img)
+        img_gradients_y = self.gradient_y(img)
+
+        weight_x = F.exp(-F.mean(F.absolute(disp_gradients_x), axis=1, keep_dims=True))
+        weight_y = F.exp(-F.mean(F.absolute(disp_gradients_y), axis=1, keep_dims=True))
+
+        smoothness_x = disp_gradients_x * weight_x
+        smoothness_y = disp_gradients_y * weight_y
+        return smoothness_x + smoothness_y
+
+    def scale_pyramid(self, images, scale_h, scale_w):
+        return F.resize_images(images, (scale_h, scale_w))
+
+    def loss_md(self, left_images, right_images):
+        h, w = left_images.shape[2:]
+        left_img1 = left_images
+        left_img2 = self.rescale_img(left_images, h/2, w/2)
+        left_img3 = self.rescale_img(left_images, h/4, w/4)
+        left_img4 = self.rescale_img(left_images, h/8, w/8)
+
+        right_img1 = right_images
+        right_img2 = self.rescale_img(right_images, h/2, w/2)
+        right_img3 = self.rescale_img(right_images, h/4, w/4)
+        right_img4 = self.rescale_img(right_images, h/8, w/8)
+
+        self.disp1_left_est = self.md.disp1[:, 0]
+        self.disp2_left_est = self.md.disp2[:, 0]
+        self.disp3_left_est = self.md.disp3[:, 0]
+        self.disp4_left_est = self.md.disp4[:, 0]
+
+        self.disp1_right_est = self.md.disp1[:, 1]
+        self.disp2_right_est = self.md.disp2[:, 1]
+        self.disp3_right_est = self.md.disp3[:, 1]
+        self.disp4_right_est = self.md.disp4[:, 1]
+
+        # deiparity smoothness error using gradient [:-1], [1:]
+        self.disp1_left_smoothness = self.get_disparity_smoothness(self.md.disp1, left_img1)
+        self.disp2_left_smoothness = self.get_disparity_smoothness(self.md.disp2, left_img2)
+        self.disp3_left_smoothness = self.get_disparity_smoothness(self.md.disp3, left_img3)
+        self.disp4_left_smoothness = self.get_disparity_smoothness(self.md.disp4, left_img4)
+
+        self.disp1_right_smoothness = self.get_disparity_smoothness(self.md.disp1, right_img1)
+        self.disp2_right_smoothness = self.get_disparity_smoothness(self.md.disp2, right_img2)
+        self.disp3_right_smoothness = self.get_disparity_smoothness(self.md.disp3, right_img3)
+        self.disp4_right_smoothness = self.get_disparity_smoothness(self.md.disp4, right_img4)
+
+        self.disp1_left_loss = F.mean(F.absolute(self.disp1_left_smoothness))
+        self.disp2_left_loss = F.mean(F.absolute(self.disp2_left_smoothness)) / 2
+        self.disp3_left_loss = F.mean(F.absolute(self.disp3_left_smoothness)) / 4
+        self.disp4_left_loss = F.mean(F.absolute(self.disp4_left_smoothness)) / 8
+
+        self.disp1_right_loss = F.mean(F.absolute(self.disp1_right_smoothness))
+        self.disp2_right_loss = F.mean(F.absolute(self.disp2_right_smoothness)) / 2
+        self.disp3_right_loss = F.mean(F.absolute(self.disp3_right_smoothness)) / 4
+        self.disp4_right_loss = F.mean(F.absolute(self.disp4_right_smoothness)) / 8
+
+        total_smoothness_loss = self.disp1_left_loss + self.disp2_left_loss
+                              + self.disp3_left_loss + self.disp4_left_loss
+                              + self.disp1_right_loss + self.disp2_right_loss
+                              + self.disp3_right_loss + self.disp4_right_loss
 
         # TODO:
 
@@ -43,9 +109,6 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         # chainer.report({'loss': loss, "loss_rec": loss_rec,
         #                 'loss_adv': loss_adv, "loss_l": loss_l}, md)
         return total_loss
-
-    def scale_pyramid(self, images, scale=4):
-        F.resize_images(images, (h, w))
 
     def update_core(self):
         xp = self.md.xp
@@ -68,7 +131,7 @@ class monodepthUpdater(chainer.training.StandardUpdater):
 
         self.md.calc(left_images)
         md_optimizer = self.get_optimizer('md')
-        md_optimizer.update(self.loss_md, self.md, left_images, right_images)
+        md_optimizer.update(self.loss_md, left_images, right_images)
 
 
 def train(args):
