@@ -29,30 +29,6 @@ from bilinear_sampler import *
 
         return tf.clip_by_value((1 - SSIM) / 2, 0, 1)
 
-    def build_model(self):
-        with slim.arg_scope([slim.conv2d, slim.conv2d_transpose], activation_fn=tf.nn.elu):
-            with tf.variable_scope('model', reuse=self.reuse_variables):
-
-                self.left_pyramid  = self.scale_pyramid(self.left,  4)
-                if self.mode == 'train':
-                    self.right_pyramid = self.scale_pyramid(self.right, 4)
-
-                if self.params.do_stereo:
-                    self.model_input = tf.concat([self.left, self.right], 3)
-                else:
-                    self.model_input = self.left
-
-    def build_outputs(self):
-        # GENERATE IMAGES
-        with tf.variable_scope('images'):
-            self.left_est  = [self.generate_image_left(self.right_pyramid[i], self.disp_left_est[i])  for i in range(4)]
-            self.right_est = [self.generate_image_right(self.left_pyramid[i], self.disp_right_est[i]) for i in range(4)]
-
-        # LR CONSISTENCY
-        with tf.variable_scope('left-right'):
-            self.right_to_left_disp = [self.generate_image_left(self.disp_right_est[i], self.disp_left_est[i])  for i in range(4)]
-            self.left_to_right_disp = [self.generate_image_right(self.disp_left_est[i], self.disp_right_est[i]) for i in range(4)]
-
     def build_losses(self):
         with tf.variable_scope('losses', reuse=self.reuse_variables):
             # L1

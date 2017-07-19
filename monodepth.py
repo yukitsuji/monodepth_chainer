@@ -51,6 +51,29 @@ class monodepthUpdater(chainer.training.StandardUpdater):
     def scale_pyramid(self, images, scale_h, scale_w):
         return F.resize_images(images, (scale_h, scale_w))
 
+    def ssim(self, pred, orig):
+        c1 = 0.01 ** 2
+        c2 = 0.03 ** 2
+
+        # TODO: Check argument
+        mu_pred = F.average_pooling_2d(pred, 3, 1, "VALID")
+        mu_orig = F.average_pooling_2d(orig, 3, 1, "VALID")
+
+        sigma_pred = F.average_pooling_2d(pred ** 2, 3, 1, "VALID") - mu_pred ** 2
+        sigma_orig = F.average_pooling_2d(orig ** 2, 3, 1, "VALID") - mu_orig ** 2
+        sigma_both = F.average_pooling_2d(pred * orig, 3, 1, "VALID") - mu_pred * mu_orig
+
+        ssim_n = (2 * mu_pred * mu_orig + c1) * (2 * sigma_both + c2)
+        ssim_d = (mu_pred ** 2 + mu_orig ** 2 + c1) * (sigma_pred + sigma_orig + c2)
+        ssim = ssim_n / ssim_d
+        return F.clip((1 - ssim) / 2, 0.0, 1.0)
+
+    def generate_image_left(self, img, disp):
+        return bilinear_sampler_1d(img, -disp)
+
+    def generate_image_right(self, img, disp):
+        return bilinear_sampler_1d(img, disp)
+
     def loss_md(self, left_images, right_images):
         h, w = left_images.shape[2:]
         left_img1 = left_images
@@ -72,6 +95,46 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         self.disp2_right_est = self.md.disp2[:, 1]
         self.disp3_right_est = self.md.disp3[:, 1]
         self.disp4_right_est = self.md.disp4[:, 1]
+
+        # TODO: Generate Images
+        self.left_est1 = self.generate_image_left(self.right_img1, self.disp1_left_est)
+        self.left_est2 = self.generate_image_left(self.right_img2, self.disp2_left_est)
+        self.left_est3 = self.generate_image_left(self.right_img3, self.disp3_left_est)
+        self.left_est4 = self.generate_image_left(self.right_img4, self.disp4_left_est)
+
+        self.right_est1 = self.generate_image_right(self.left_img1, self.disp1_right_est)
+        self.right_est2 = self.generate_image_right(self.left_img2, self.disp2_right_est)
+        self.right_est3 = self.generate_image_right(self.left_img3, self.disp3_right_est)
+        self.right_est4 = self.generate_image_right(self.left_img4, self.disp4_right_est)
+
+        # TODO: LR Consistency
+        self.right_to_left_disp1 = self.generate_image_left(self.disp1_right_est, self.disp1_left_est)
+        self.right_to_left_disp2 = self.generate_image_left(self.disp2_right_est, self.disp2_left_est)
+        self.right_to_left_disp3 = self.generate_image_left(self.disp3_right_est, self.disp3_left_est)
+        self.right_to_left_disp4 = self.generate_image_left(self.disp4_right_est, self.disp4_left_est)
+
+        self.left_to_right_disp1 = self.generate_image_right(self.disp1_left_est, self.disp1_right_est)
+        self.left_to_right_disp2 = self.generate_image_right(self.disp2_left_est, self.disp2_right_est)
+        self.left_to_right_disp3 = self.generate_image_right(self.disp3_left_est, self.disp3_right_est)
+        self.left_to_right_disp4 = self.generate_image_right(self.disp4_left_est, self.disp4_right_est)
+
+        # TODO: L1 Loss
+        self.l1_left1 = F.mean(F.absolute(self.left_est1 - self.left_img1))
+        self.l1_left2 = F.mean(F.absolute(self.left_est2 - self.left_img2))
+        self.l1_left3 = F.mean(F.absolute(self.left_est3 - self.left_img3))
+        self.l1_left4 = F.mean(F.absolute(self.left_est4 - self.left_img4))
+
+        self.l1_right1 = F.mean(F.absolute(self.right_est1 - self.right_img1))
+        self.l1_right2 = F.mean(F.absolute(self.right_est2 - self.right_img2))
+        self.l1_right3 = F.mean(F.absolute(self.right_est3 - self.right_img3))
+        self.l1_right4 = F.mean(F.absolute(self.right_est4 - self.right_img4))
+
+        # TODO: SSIM Loss
+        self.ssim_left1 = F.mean(self.ssim(self.left_est1, self.left_img1))
+
+        # TODO: Weighted Sum of L1 and SSIM loss
+
+        # TODO: LR Consistency Loss
 
         # deiparity smoothness error using gradient [:-1], [1:]
         self.disp1_left_smoothness = self.get_disparity_smoothness(self.md.disp1, left_img1)
@@ -99,13 +162,9 @@ class monodepthUpdater(chainer.training.StandardUpdater):
                               + self.disp1_right_loss + self.disp2_right_loss
                               + self.disp3_right_loss + self.disp4_right_loss
 
-        # TODO:
+        # TODO: Total Loss
 
         # loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
-        # loss_adv = lam2 * y_out
-        # l_t = self.l.calc(right_images)
-        # loss_l = lam3 * (F.mean_absolute_error(l_x, l_t))
-        # loss = loss_rec + loss_adv + loss_l
         # chainer.report({'loss': loss, "loss_rec": loss_rec,
         #                 'loss_adv': loss_adv, "loss_l": loss_l}, md)
         return total_loss
