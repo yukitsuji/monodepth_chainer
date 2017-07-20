@@ -131,10 +131,54 @@ class monodepthUpdater(chainer.training.StandardUpdater):
 
         # TODO: SSIM Loss
         self.ssim_left1 = F.mean(self.ssim(self.left_est1, self.left_img1))
+        self.ssim_left2 = F.mean(self.ssim(self.left_est2, self.left_img2))
+        self.ssim_left3 = F.mean(self.ssim(self.left_est3, self.left_img3))
+        self.ssim_left4 = F.mean(self.ssim(self.left_est4, self.left_img4))
+
+        self.ssim_right1 = F.mean(self.ssim(self.right_est1, self.right_img1))
+        self.ssim_right2 = F.mean(self.ssim(self.right_est2, self.right_img2))
+        self.ssim_right3 = F.mean(self.ssim(self.right_est3, self.right_img3))
+        self.ssim_right4 = F.mean(self.ssim(self.right_est4, self.right_img4))
 
         # TODO: Weighted Sum of L1 and SSIM loss
+        self.image_loss_left1 = self.alpha_image_loss * self.ssim_left1 +
+                                (1 - self.alpha_image_loss) * self.l1_left1
+        self.image_loss_left2 = self.alpha_image_loss * self.ssim_left2 +
+                                (1 - self.alpha_image_loss) * self.l1_left2
+        self.image_loss_left3 = self.alpha_image_loss * self.ssim_left3 +
+                                (1 - self.alpha_image_loss) * self.l1_left3
+        self.image_loss_left4 = self.alpha_image_loss * self.ssim_left4 +
+                                (1 - self.alpha_image_loss) * self.l1_left4
+
+        self.image_loss_right1 = self.alpha_image_loss * self.ssim_right1 +
+                                (1 - self.alpha_image_loss) * self.l1_right1
+        self.image_loss_right2 = self.alpha_image_loss * self.ssim_right2 +
+                                (1 - self.alpha_image_loss) * self.l1_right2
+        self.image_loss_right3 = self.alpha_image_loss * self.ssim_right3 +
+                                (1 - self.alpha_image_loss) * self.l1_right3
+        self.image_loss_right4 = self.alpha_image_loss * self.ssim_right4 +
+                                (1 - self.alpha_image_loss) * self.l1_right4
+
+        total_image_loss = self.image_loss_left1 + self.image_loss_left2
+                         + self.image_loss_left3 + self.image_loss_left4
+                         + self.image_loss_right1 + self.image_loss_right2
+                         + self.image_loss_right3 + self.image_loss_right4
 
         # TODO: LR Consistency Loss
+        self.lr_loss_left1 = F.mean(F.absolute(self.right_to_left_disp1 - self.disp1_left_est))
+        self.lr_loss_left2 = F.mean(F.absolute(self.right_to_left_disp2 - self.disp2_left_est))
+        self.lr_loss_left3 = F.mean(F.absolute(self.right_to_left_disp3 - self.disp3_left_est))
+        self.lr_loss_left4 = F.mean(F.absolute(self.right_to_left_disp4 - self.disp4_left_est))
+
+        self.lr_loss_right1 = F.mean(F.absolute(self.left_to_right_disp1 - self.disp1_right_est))
+        self.lr_loss_right2 = F.mean(F.absolute(self.left_to_right_disp2 - self.disp2_right_est))
+        self.lr_loss_right3 = F.mean(F.absolute(self.left_to_right_disp3 - self.disp3_right_est))
+        self.lr_loss_right4 = F.mean(F.absolute(self.left_to_right_disp4 - self.disp4_right_est))
+
+        total_lr_loss = self.lr_loss_left1 + self.lr_loss_left2
+                      + self.lr_loss_left3 + self.lr_loss_left4
+                      + self.lr_loss_right1 + self.lr_loss_right2
+                      + self.lr_loss_right3 + self.lr_loss_right4
 
         # deiparity smoothness error using gradient [:-1], [1:]
         self.disp1_left_smoothness = self.get_disparity_smoothness(self.md.disp1, left_img1)
@@ -163,10 +207,13 @@ class monodepthUpdater(chainer.training.StandardUpdater):
                               + self.disp3_right_loss + self.disp4_right_loss
 
         # TODO: Total Loss
+        total_loss = total_image_loss + self.alpha_smoothness * total_smoothness_loss
+                   + self.alpha_lr * total_lr_loss
 
-        # loss_rec = lam1 * (F.mean_absolute_error(x_out, right_images))
-        # chainer.report({'loss': loss, "loss_rec": loss_rec,
-        #                 'loss_adv': loss_adv, "loss_l": loss_l}, md)
+        md = self.md
+        chainer.report({'total_loss': loss, "image_loss": total_image_loss,
+                        'smoothness_loss': total_smoothness_loss,
+                        "lr_loss": total_lr_loss}, md)
         return total_loss
 
     def update_core(self):
@@ -191,7 +238,6 @@ class monodepthUpdater(chainer.training.StandardUpdater):
         self.md.calc(left_images)
         md_optimizer = self.get_optimizer('md')
         md_optimizer.update(self.loss_md, left_images, right_images)
-
 
 def train(args):
     dataset = KittiDataset(
@@ -218,7 +264,7 @@ def train(args):
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     snapshot_interval = (args.snapshot_interval, 'iteration')
-    trainer.extend(extensions.dump_graph('md/loss'))
+    trainer.extend(extensions.dump_graph('md/total_loss'))
     trainer.extend(extensions.snapshot(), trigger=snapshot_interval)
     trainer.extend(extensions.snapshot_object(
         md, 'md_vgg_iter_{.updater.iteration}'), trigger=snapshot_interval)
@@ -226,7 +272,7 @@ def train(args):
         opt, 'optimizer_'), trigger=snapshot_interval)
     trainer.extend(extensions.LogReport(trigger=(10, 'iteration'), ))
     trainer.extend(extensions.PrintReport(
-        ['epoch', 'md/loss']))
+        ['epoch', 'md/total_loss', 'md/image_loss', 'md/smoothness_loss', 'md/lr_loss']))
     trainer.extend(extensions.ProgressBar(update_interval=20))
 
     if args.resume:
